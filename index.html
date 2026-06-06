@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Landing - Mobile Responsive 3D</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0c0c0e;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #bg-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* --- TERMINAL WINDOW --- */
+        .terminal-window {
+            position: relative;
+            z-index: 10;
+            width: 90%;
+            max-width: 500px;
+            background: rgba(12, 12, 16, 0.85);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 42, 95, 0.25);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        .terminal-header {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 10px;
+        }
+
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot.red { background-color: #ff5f56; }
+        .dot.yellow { background-color: #ffbd2e; }
+        .dot.green { background-color: #27c93f; }
+
+        .terminal-content { font-size: 12px; line-height: 1.6; color: #ced4da; }
+        .system-tag { color: #ff2a5f; font-weight: bold; }
+        .status-tag { color: #27c93f; }
+
+        .btn-container { margin-top: 25px; display: none; opacity: 0; animation: fadeIn 0.4s forwards; }
+        
+        .decrypt-btn {
+            background: transparent;
+            border: 2px solid #ff2a5f;
+            color: #ff2a5f;
+            padding: 10px 22px;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%; /* Agar mudah ditekan di layar touchscreen HP */
+            transition: all 0.2s ease;
+        }
+
+        @media (min-width: 600px) {
+            .decrypt-btn { width: auto; }
+        }
+
+        .decrypt-btn:hover {
+            background: #ff2a5f;
+            color: #ffffff;
+            box-shadow: 0 0 20px rgba(255, 42, 95, 0.5);
+        }
+
+        /* --- 3D CANVAS FILTERS --- */
+        #heart-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            display: none;
+            opacity: 0;
+            transition: opacity 1s ease;
+            filter: drop-shadow(0 0 8px rgba(255, 42, 95, 0.65));
+            will-change: transform;
+        }
+
+        /* --- CINEMATIC TEXT CENTERED --- */
+        .final-message {
+            position: absolute;
+            z-index: 15;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2.2rem; /* Responsif dasar untuk HP */
+            font-weight: 500;
+            letter-spacing: 1px;
+            color: #ffffff;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.85);
+            opacity: 0;
+            pointer-events: none;
+            text-align: center;
+            white-space: nowrap;
+            transition: opacity 1.8s ease;
+            will-change: transform, opacity;
+        }
+
+        /* Pembesaran teks khusus untuk layar monitor PC */
+        @media (min-width: 768px) {
+            .final-message {
+                font-size: 3.8rem;
+                letter-spacing: 2px;
+            }
+        }
+
+        .flicker { animation: glitch 0.1s 2; }
+        @keyframes fadeIn { to { opacity: 1; } }
+        @keyframes glitch {
+            0% { opacity: 0.3; background-color: rgba(255, 42, 95, 0.15); }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <audio id="bg-music" src="angel.mp3" loop></audio>
+    <canvas id="bg-canvas"></canvas>
+
+    <div class="terminal-window" id="terminal">
+        <div class="terminal-header">
+            <div class="dot red"></div>
+            <div class="dot yellow"></div>
+            <div class="dot green"></div>
+        </div>
+        <div class="terminal-content" id="log-container"></div>
+        <div class="btn-container" id="btn-wrapper">
+            <button class="decrypt-btn" id="decrypt-trigger">[ DECRYPT MESSAGE ]</button>
+        </div>
+    </div>
+
+    <canvas id="heart-canvas"></canvas>
+    <div class="final-message" id="love-text">Love you.</div>
+
+    <script>
+        const logContainer = document.getElementById('log-container');
+        const btnWrapper = document.getElementById('btn-wrapper');
+        const decryptTrigger = document.getElementById('decrypt-trigger');
+        const terminal = document.getElementById('terminal');
+        const heartCanvas = document.getElementById('heart-canvas');
+        const bgCanvas = document.getElementById('bg-canvas');
+        const loveText = document.getElementById('love-text');
+        const bgMusic = document.getElementById('bg-music');
+
+        const ctx = heartCanvas.getContext('2d');
+        const bgCtx = bgCanvas.getContext('2d');
+
+        let width = heartCanvas.width = bgCanvas.width = window.innerWidth;
+        let height = heartCanvas.height = bgCanvas.height = window.innerHeight;
+
+        // Mendeteksi apakah user membuka dari perangkat mobile/Android
+        let isMobile = width < 768;
+
+        window.addEventListener('resize', () => {
+            width = heartCanvas.width = bgCanvas.width = window.innerWidth;
+            height = heartCanvas.height = bgCanvas.height = window.innerHeight;
+            isMobile = width < 768;
+        });
+
+        // --- 1. BOOT SEQUENCE ---
+        const terminalLines = [
+            '<span class="system-tag">[system]</span> Initializing heart.PROTOCOL_v2.0...',
+            '<span class="system-tag">[system]</span> Scanning emotional database...',
+            '<span class="system-tag">[system]</span> Decrypting affection package...',
+            '<span class="system-tag">[system]</span> <span class="status-tag">Connection established.</span>',
+            '<br/>&gt; One encrypted package found for you.'
+        ];
+
+        let lineIndex = 0;
+        function typeTerminal() {
+            if (lineIndex < terminalLines.length) {
+                const line = document.createElement('p');
+                line.innerHTML = terminalLines[lineIndex];
+                logContainer.appendChild(line);
+                lineIndex++;
+                setTimeout(typeTerminal, 300); 
+            } else {
+                btnWrapper.style.display = 'block';
+            }
+        }
+        window.onload = typeTerminal;
+
+        // --- 2. BACKGROUND MATRIX ---
+        const bgParticles = [];
+        const codeSnippets = ['01', 'src', 'love', '==', 'true', '1'];
+        for(let i=0; i<12; i++) {
+            bgParticles.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                text: codeSnippets[Math.floor(Math.random() * codeSnippets.length)],
+                speed: 0.3 + Math.random() * 0.3,
+                opacity: 0.04 + Math.random() * 0.06
+            });
+        }
+
+        function drawBackground() {
+            bgCtx.fillStyle = '#0c0c0e';
+            bgCtx.fillRect(0, 0, width, height);
+            bgCtx.font = "10px monospace";
+            
+            bgParticles.forEach(p => {
+                bgCtx.fillStyle = `rgba(255, 42, 95, ${p.opacity})`;
+                bgCtx.fillText(p.text, p.x, p.y);
+                p.y -= p.speed;
+                if(p.y < -20) p.y = height + 20;
+            });
+            requestAnimationFrame(drawBackground);
+        }
+        drawBackground();
+
+        // --- 3. INTERACTION ---
+        decryptTrigger.addEventListener('click', () => {
+            bgMusic.play().catch(err => console.log("Audio automated"));
+            document.body.classList.add('flicker');
+            
+            setTimeout(() => {
+                document.body.classList.remove('flicker');
+                terminal.style.opacity = '0';
+                
+                setTimeout(() => {
+                    terminal.style.display = 'none';
+                    heartCanvas.style.display = 'block';
+                    setTimeout(() => heartCanvas.style.opacity = '1', 50);
+                    initHeartAnimation();
+                }, 400);
+            }, 150);
+        });
+
+        // --- 4. ENGINE GRAFIS 3D RESPONSIVE ---
+        const particles = [];
+        // Jumlah partikel dikondisikan: 550 untuk HP (biar ga numpuk), 750 untuk monitor PC besar
+        const particleCount = isMobile ? 550 : 750; 
+        let angleY = 0; 
+        const rotationSpeed = 0.012; 
+
+        function getHeartPoint3D(t, phi) {
+            let x = 16 * Math.pow(Math.sin(t), 3);
+            let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+            
+            let z = x * Math.sin(phi) * 0.35; 
+            x = x * Math.cos(phi); 
+
+            // SKALA RESPONSIF: Jika di HP, ukuran bentukan hati dikecilkan agar tidak menabrak tepian layar
+            const scale = isMobile ? (Math.min(width, height) / 34) : (Math.min(width, height) / 44); 
+            
+            return { x: x * scale, y: -y * scale, z: z * scale };
+        }
+
+        class Particle3D {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                
+                const t = Math.random() * Math.PI * 2;
+                const phi = (Math.random() - 0.5) * Math.PI; 
+                
+                const pos3D = getHeartPoint3D(t, phi);
+                this.origX = pos3D.x;
+                this.origY = pos3D.y;
+                this.origZ = pos3D.z;
+                
+                this.assembleSpeed = 0.025 + Math.random() * 0.025; 
+                
+                // UKURAN HURUF RESPONSIF: Jika layar HP, gunakan font kecil (6px-10px) agar teks "i love you" tidak tabrakan
+                this.fontSize = isMobile ? (6 + Math.random() * 4) : (11 + Math.random() * 4); 
+                
+                this.text = "i love you";
+                this.opacity = 0;
+                
+                this.currentX = this.x;
+                this.currentY = this.y;
+            }
+
+            render(centerX, centerY, cosA, sinA) {
+                const rotX = this.origX * cosA - this.origZ * sinA;
+                const rotZ = this.origX * sinA + this.origZ * cosA;
+                
+                const perspective = 400 / (400 + rotZ);
+                
+                const targetX = centerX + rotX * perspective;
+                const targetY = centerY + this.origY * perspective;
+
+                this.currentX += (targetX - this.currentX) * this.assembleSpeed;
+                this.currentY += (targetY - this.currentY) * this.assembleSpeed;
+
+                if (this.opacity < 0.95) this.opacity += 0.03;
+
+                const dynamicSize = this.fontSize * perspective;
+                
+                // FIX: Pengaturan tingkat transparansi yang dikunci tipis saat berputar ke belakang agar kedalaman tetap presisi dan kontras
+                const dynamicOpacity = this.opacity * (0.5 + (perspective - 0.5) * 1.2);
+
+                ctx.fillStyle = `rgba(255, 42, 95, ${Math.max(0.35, Math.min(0.95, dynamicOpacity))})`;
+                ctx.font = `bold ${Math.max(5, dynamicSize)}px monospace`;
+                ctx.fillText(this.text, this.currentX, this.currentY);
+            }
+        }
+
+        function initHeartAnimation() {
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new Particle3D());
+            }
+            animate();
+            
+            setTimeout(() => {
+                loveText.style.opacity = '1';
+            }, 1500);
+        }
+
+        function animate() {
+            ctx.fillStyle = '#0c0c0e';
+            ctx.fillRect(0, 0, width, height);
+            
+            const centerX = width / 2;
+            const centerY = height / 2;
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            angleY += rotationSpeed;
+
+            const cosA = Math.cos(angleY);
+            const sinA = Math.sin(angleY);
+
+            const len = particles.length;
+            for (let i = 0; i < len; i++) {
+                particles[i].render(centerX, centerY, cosA, sinA);
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // --- 5. TOUCH / MOUSE DIRECTION SENSOR ---
+        let targetX = 0, targetY = 0;
+        let currentX = 0, currentY = 0;
+
+        const handleMove = (clientX, clientY) => {
+            targetX = (clientX - width/2) * 0.005;
+            targetY = (clientY - height/2) * 0.005;
+        };
+
+        window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
+        window.addEventListener('touchmove', (e) => {
+            if(e.touches.length > 0) {
+                handleMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        });
+
+        function smoothParallax() {
+            currentX += (targetX - currentX) * 0.08;
+            currentY += (targetY - currentY) * 0.08;
+            
+            heartCanvas.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
+            loveText.style.transform = `translate3d(calc(-50% + ${currentX * 1.1}px), calc(-50% + ${currentY * 1.1}px), 0)`;
+            
+            requestAnimationFrame(smoothParallax);
+        }
+        smoothParallax();
+    </script>
+</body>
+</html>
